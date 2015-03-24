@@ -1,32 +1,34 @@
 # Libraries
-library(plyr)
-library(ggplot2)
-library(reshape2)
-library(gridExtra)
 
-# Data
-logs <- read.csv("logs.csv")
-results <- read.csv("results.csv")
-gold <- read.csv("goldstandard.csv")
-timg <- read.csv("testimages.csv")
-eng <- read.csv("engagement.csv")
-dim(logs); dim(results); dim(gold); dim(timg)
+##' Clean up workspace, just in case.
+rm(list=ls())
 
-# Overview
-summary(gold); summary(results);
+##' Load the libraries and other options.
+source('options.R')
 
-# Make a joined set
-names(gold) == names(results)
-all <- rbind(results,gold)
-all$class[all$User == "RobJon"] <- "gold"
-all$class[all$User != "RobJon"] <- "userResult"
-all$class <- as.factor(all$class)
+##' Load up the dataset
+load('data/mergedData.RData')
+names(df)
 
 # User results entries
-imgProcByUser <- count(results,"User")$freq
+imgProcByUser <- plyr::count(df,"User")$freq
+plyr::count(df, 'User')
+?count
+
+df %>%
+  select(User) %>%
+  mutate(User = as.factor(User)) %>%
+  group_by(User) %>%
+  summarize(n = n()) %>%
+  as.data.frame() %>%
+  str
+
+  qplot(.)
+
 mean(imgProcByUser)
 sd(imgProcByUser)
 qplot(imgProcByUser,main="Image Completion Histogram",xlab="Images Completed",ylab="Number of Users")
+
 
 # TODO: Check skips?
 #actionByUser <- count(logs,"Action")$freq
@@ -37,9 +39,9 @@ qplot(imgProcByUser,main="Image Completion Histogram",xlab="Images Completed",yl
 # Results histograms (TODO: Fix scales for comparison)
 qplot(Fruit,data=results ,main="Fruit Evaluation Results",xlab="Image has Fruit",ylab="Number of Users")
 
-p1 <- ggplot(all, aes(x=Flower, fill=class)) + geom_histogram(binwidth=.5, position="dodge")
-p2 <- ggplot(all, aes(x=Bud, fill=class)) + geom_histogram(binwidth=.5, position="dodge")
-p3 <- ggplot(all, aes(x=Fruit, y=..count../sum(..count..), fill=class)) + 
+p1 <- ggplot(df, aes(x=Flower, fill=class)) + geom_histogram(binwidth=.5, position="dodge")
+p2 <- ggplot(df, aes(x=Bud, fill=class)) + geom_histogram(binwidth=.5, position="dodge")
+p3 <- ggplot(df, aes(x=Fruit, y=..count../sum(..count..), fill=class)) + 
   geom_histogram(binwidth=.5, position="dodge") #+ scale_y_continuous(labels = percent_format())
 grid.arrange(p1, p2, p3, ncol=3)
 
@@ -47,11 +49,22 @@ grid.arrange(p1, p2, p3, ncol=3)
 # Compare to gold standard
 #
 images <- results #results$User == "AmusingBombay"
-images$correctFlower <- "False"; images$correctBud <- "False"; images$correctFruit <- "False"
+##' Jon: Try not to put multiple statements on one line... Its not
+##' proper R practice.
+images$correctFlower <- "False"
+images$correctBud <- "False"
+images$correctFruit <- "False"
 accuracyCols <- c("tpFlower","tpBud","tpFruit","tnFlower","tnBud",
                   "tnFruit","fpFlower","fpBud","fpFruit","fnFlower","fnBud","fnFruit")
 images[accuracyCols] <- 0
 
+##' Jon: I'm not really sure what you are trying to do here. R is
+##' really bad at for loops, so they should be avoided at all costs
+##' (especially the readability of them).  Try to vectorize as much as
+##' possible... like the apply family or use dplyr.  First off, what
+##' are you trying to do here?  It would help if you had some
+##' comments...  Also, for simple if .. then statements, use the
+##' function `ifelse()`... it's more readable.
 for (i in 1:dim(images)[1]) {
   if (gold$Flower[gold$iID == images$iID[i]] == images$Flower[i]) {
     images$correctFlower[i] <- "True"
@@ -117,6 +130,9 @@ metricCols <- c("accuracyFlower","tprFlower","fdrFlower",
 confmat[metricCols] <- 0.0
 
 # Calculate metrics for images
+##' Jon: I can tell you come from a more "classical" programmer
+##' mindset... You use *so* many `for` loops!  R is best when those
+##' are *not* used!
 for (i in 1:dim(confmat)[1]) {
   # Flowers
   confmat$accuracyFlower[i] <- (confmat$tpFlower[i] + confmat$tnFlower[i]) /
@@ -141,9 +157,20 @@ tclass <- merge(confmat,timg,by="iID")
 confmat <- tclass
 
 # TODO: WTF does this mean
+##' Jon: Yea, I agree, wtf is going on! haha :P
 # Comparison of disributions for flower, bud, and fruit on accuracy, TPR, and FDR
+##' Jon: A tip, when you get a longer statement, after every comma
+##' make a new line.  Compare the one below with the following one:
 fl1 <- qplot(confmat$accuracyFlower,xlab="Flower Classification Accuracy",ylab="Number of Images",color=confmat$TestClass) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 35))
+
+##' With this one... Much easier to read.
+fl1 <- qplot(confmat$accuracyFlower,
+             xlab="Flower Classification Accuracy",
+             ylab="Number of Images",
+             color=confmat$TestClass) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 35))
+
 # fl2 <- qplot(confmat$tprFlower,xlab="Flower True Positive Rate",ylab="Number of Images",color=confmat$TestClass)
 # fl3 <- qplot(confmat$fdrFlower,xlab="Flower False Discovery Rate",ylab="Number of Images",color=confmat$TestClass)
 bud1 <- qplot(confmat$accuracyBud,xlab="Bud Classification Accuracy",ylab="Number of Images",color=confmat$TestClass) +
@@ -189,11 +216,15 @@ grid.arrange(fl1, bud1, fr1, ncol=3)
 # y <- dnorm(x,mean=distbudFdr[1],sd=distbudFdr[2]); qplot(x,y)
 # y <- dnorm(x,mean=distfrFdr[1],sd=distfrFdr[2]); qplot(x,y)
 
+##' Jon: Any reason why you create new dataframe objects all the time?
+##' Why not just use the `confmat` object?
 imageScores <- confmat
 
 #
 # Aggregate for users
 #
+##' Jon: Same thing here, why create the `users` object when you
+##' already have the `images` object?
 users <- images
 users$iID <- NULL
 
@@ -289,6 +320,7 @@ userScores <- confmat
 times <- images
 times$duration <- 0.0
 
+##' Jon: Try to vectorize this
 for (i in 1:dim(times)[1]) {
   if (i == 1) {
     times$duration[i] <- 0
@@ -300,6 +332,8 @@ for (i in 1:dim(times)[1]) {
 }
 
 # Cool hist plot of users and their durations
+##' Jon: A tip, it's general R practice to put a space after the comma
+##' for readability.
 qplot(duration,data=times,color=User,guide=FALSE) +
   xlab("Completion Time of Image (seconds)") +
   ylab("Number of Users") +
@@ -381,6 +415,8 @@ userEngDurationScore <- merge(userDurationScore,eng,by="User")
 
 # Including Duration
 # XXX: Use these plots
+##' Jon: Here is a place you could start making use of functions to
+##' make it more readable and easier for you to code.
 ggplot(userEngDurationScore, aes(x=duration/60, y = accuracy, color = 'Object',size=IMIInterest)) + 
   geom_point(aes(y=accuracyFlower, col = "Flowers")) + 
   geom_point(aes(y=accuracyBud, col = "Buds")) +
@@ -535,3 +571,10 @@ ggplot(numUserScores, aes(accuracyFruit, fill = as.factor(numUsers))) +
   ylab("Density") + 
   labs(title="Consensus Scoring of Fruit with Variable Number of Users using Random Sampling",
        fill="Number of Users")
+
+##' Jon: A tip, for a file this big and with several (it seems to me)
+##' different purposes within the script, I would suggest splitting
+##' the file up into more discrete, focused tasks.  It makes things a
+##' LOT easier for you and for those reading your code (I also
+##' recognize it probably isn't all your code... you are on a team
+##' after all).
